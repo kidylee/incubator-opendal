@@ -16,144 +16,137 @@
 // under the License.
 
 use std::collections::HashMap;
+use std::ffi::{CStr, CString};
+use std::os::raw::{c_char, c_int};
 use std::str::FromStr;
 
-use jni::objects::JClass;
-use jni::objects::JMap;
-use jni::objects::JObject;
-use jni::objects::JString;
-use jni::JNIEnv;
 use opendal::BlockingOperator;
-use opendal::Operator;
 use opendal::Scheme;
 
+
+#[repr(C)]
+#[allow(missing_copy_implementations)]
+pub struct Stat(*const opendal::Metadata);
+
+
+impl Drop for Stat {
+    fn drop(&mut self) {
+        println!("Dropping Stat");
+    }
+}
 #[no_mangle]
-pub extern "system" fn Java_org_apache_opendal_Operator_getOperator(
-    mut env: JNIEnv,
-    _class: JClass,
-    input: JString,
-    params: JObject,
-) -> *const i32 {
-    let input: String = env
-        .get_string(&input)
-        .expect("Couldn't get java string!")
-        .into();
+#[allow(non_snake_case)]
+pub extern fn dropStat(_: Box<Stat>) {
 
-    let scheme = Scheme::from_str(&input).unwrap();
+}
 
-    let map = convert_map(&mut env, &params);
-    if let Ok(operator) = build_operator(scheme, map) {
-        Box::into_raw(Box::new(operator)) as *const i32
-    } else {
-        env.exception_clear().expect("Couldn't clear exception");
-        env.throw_new(
-            "java/lang/IllegalArgumentException",
-            "Unsupported operator.",
-        )
-        .expect("Couldn't throw exception");
-        std::ptr::null()
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern fn stat(ptr: *mut BlockingOperator, fileName: *const c_char) -> Stat {
+    let op = unsafe{&mut *ptr};
+    let file_name = to_string(fileName);
+    Stat(&op.stat(&file_name).unwrap())
+
+}
+
+
+#[no_mangle]
+#[allow(non_snake_case)]
+pub extern fn getOperator(scheme: *const c_char, params: *const *const c_char, size: c_int, result: *mut c_int) -> *const i32 {
+    let map = string_array_to_hashmap(params, size);
+    let scheme = to_string(scheme);
+    match Scheme::from_str(&scheme) {
+        Ok(scheme) => {
+            match build_operator(scheme, map) {
+                Ok(operator) => {
+                    Box::into_raw(Box::new(operator)) as *const i32
+                }
+                Err(_) => {
+                    unsafe {
+                        *result = 1;
+                    }
+                    // return null box
+                    std::ptr::null()
+                }
+            }
+        }
+        Err(_) => {
+            unsafe {
+                *result = 1;
+            }
+            // return null box
+            std::ptr::null()
+        }
     }
 }
 
-fn convert_map(env: &mut JNIEnv, params: &JObject) -> HashMap<String, String> {
-    let mut result: HashMap<String, String> = HashMap::new();
-    let _ = JMap::from_env(env, params)
-        .unwrap()
-        .iter(env)
-        .and_then(|mut iter| {
-            while let Some(e) = iter.next(env)? {
-                let key = JString::from(e.0);
-                let value = JString::from(e.1);
-                let key: String = env
-                    .get_string(&key)
-                    .expect("Couldn't get java string!")
-                    .into();
-                let value: String = env
-                    .get_string(&value)
-                    .expect("Couldn't get java string!")
-                    .into();
-                result.insert(key, value);
-            }
-            Ok(())
-        });
-    result
-}
-
 /// # Safety
 ///
 /// This function should not be called before the Operator are ready.
 #[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_freeOperator(
-    mut _env: JNIEnv,
-    _class: JClass,
-    ptr: *mut Operator,
-) {
-    let _ = Box::from_raw(ptr);
+#[allow(non_snake_case)]
+pub extern fn write(ptr: *mut BlockingOperator,
+                    file_name: *const c_char, content: *const c_char) {
+    let op = unsafe{&mut *ptr};
+    let file_name = to_string(file_name);
+    let content = to_string(content);
+    op.write(&file_name, content).unwrap();
 }
 
-/// # Safety
-///
-/// This function should not be called before the Operator are ready.
 #[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_write(
-    mut env: JNIEnv,
-    _class: JClass,
-    ptr: *mut BlockingOperator,
-    file: JString,
-    content: JString,
-) {
-    let op = &mut *ptr;
-    let file: String = env
-        .get_string(&file)
-        .expect("Couldn't get java string!")
-        .into();
-    let content: String = env
-        .get_string(&content)
-        .expect("Couldn't get java string!")
-        .into();
-    op.write(&file, content).unwrap();
+#[allow(non_snake_case)]
+pub extern fn read(ptr: *mut BlockingOperator,
+                   file_name: *const c_char) -> *const c_char {
+    let op = unsafe{&mut *ptr};
+    let file_name = to_string(file_name);
+    op.read(&file_name)
+        .map(|content| CString::new(content).unwrap())
+        .unwrap_or_else(|_| CString::new("").unwrap())
+        .into_raw()
 }
 
-/// # Safety
-///
-/// This function should not be called before the Operator are ready.
 #[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_read<'local>(
-    mut env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    ptr: *mut BlockingOperator,
-    file: JString<'local>,
-) -> JString<'local> {
-    let op = &mut *ptr;
-    let file: String = env
-        .get_string(&file)
-        .expect("Couldn't get java string!")
-        .into();
-    let content = String::from_utf8(op.read(&file).unwrap()).expect("Couldn't convert to string");
-
-    let output = env
-        .new_string(content)
-        .expect("Couldn't create java string!");
-    output
+#[allow(non_snake_case)]
+pub extern fn delete(ptr: *mut BlockingOperator,
+                   file_name: *const c_char) {
+    let op = unsafe{&mut *ptr};
+    let file_name = to_string(file_name);
+    op.delete(&file_name).unwrap();
 }
 
-/// # Safety
-///
-/// This function should not be called before the Operator are ready.
 #[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_delete<'local>(
-    mut env: JNIEnv<'local>,
-    _class: JClass<'local>,
-    ptr: *mut BlockingOperator,
-    file: JString<'local>,
-) {
-    let op = &mut *ptr;
-    let file: String = env
-        .get_string(&file)
-        .expect("Couldn't get java string!")
-        .into();
-    op.delete(&file).unwrap();
+#[allow(non_snake_case)]
+pub extern fn dropOperator(_: Box<BlockingOperator>) {
+
 }
+
+
+fn string_array_to_hashmap(strings: *const *const c_char, len: c_int) -> HashMap<String, String> {
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    if strings.is_null() || len <= 0 {
+        return map;
+    }
+
+    let len = len as usize;
+    let strings = unsafe { std::slice::from_raw_parts(strings, len) };
+
+    for i in (0..len).step_by(2) {
+        if i + 1 < len {
+            let key_cstr = unsafe { CStr::from_ptr(strings[i]) };
+            let key = key_cstr.to_str().expect("Invalid UTF-8 string").to_owned();
+
+            let value_cstr = unsafe { CStr::from_ptr(strings[i + 1]) };
+            let value = value_cstr.to_str().expect("Invalid UTF-8 string").to_owned();
+
+            map.insert(key, value);
+        }
+    }
+
+    map
+}
+
+
 
 fn build_operator(
     scheme: opendal::Scheme,
@@ -187,4 +180,9 @@ fn build_operator(
     };
 
     Ok(op)
+}
+
+fn to_string(pointer: *const c_char) -> String {
+    let slice = unsafe { CStr::from_ptr(pointer).to_bytes() };
+    std::str::from_utf8(slice).unwrap().to_string()
 }

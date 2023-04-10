@@ -60,6 +60,13 @@
             <artifactId>jar-jni</artifactId>
             <version>${rust-maven-plugin.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.13.0</version>
+        </dependency>
+
         <dependency>
             <groupId>io.cucumber</groupId>
             <artifactId>cucumber-java</artifactId>
@@ -84,6 +91,12 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+
 
     </dependencies>
 
@@ -95,9 +108,9 @@
                 Placing it there will have Maven automatically bundle the compiled code in the Jar.
             -->
             <plugin>
-                <groupId>org.questdb</groupId>
+                <groupId>com.github.kidylee.rust-maven-plugin</groupId>
                 <artifactId>rust-maven-plugin</artifactId>
-                <version>${rust-maven-plugin.version}</version>
+                <version>1.0.1-SNAPSHOT</version>
                 <executions>
                     <execution>
                         <id>opendal-java</id>
@@ -107,7 +120,7 @@
                         <configuration>
                             <path>../java</path>
                             <release>true</release>
-                            <copyTo>${project.build.directory}/classes/org/apache/opendal/rust/libs</copyTo>
+                            <copyTo>${project.build.directory}/classes</copyTo>
                             <copyWithPlatformDir>true</copyWithPlatformDir>
                             <extraArgs>
                                 <extraArg>--color=always</extraArg>
@@ -152,5 +165,11 @@
             </plugin>
         </plugins>
     </build>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </pluginRepository>
+    </pluginRepositories>
 
 </project>

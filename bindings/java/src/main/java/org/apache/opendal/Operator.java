@@ -20,56 +20,49 @@
 
 package org.apache.opendal;
 
-import io.questdb.jar.jni.JarJniLoader;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
 
 import java.util.Map;
 
 
 public class Operator {
 
-    long ptr;
+    Pointer ptr;
 
-    public Operator(String schema, Map<String, String> params) {
-        this.ptr = getOperator(schema, params);
+    public Operator(String scheme, Map<String, String> params) {
+        // convert params to a String[]
+        String[] paramsArray = new String[params.size() * 2];
+        int i = 0;
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            paramsArray[i++] = entry.getKey();
+            paramsArray[i++] = entry.getValue();
+        }
+        IntByReference result = new IntByReference();
+        ptr = Operators.INSTANCE.getOperator(scheme, paramsArray, params.size(), result);
+        if(result.getValue() != 0) {
+            throw new IllegalArgumentException("Failed to create operator.");
+        }
     }
-
-    public static final String ORG_APACHE_OPENDAL_RUST_LIBS = "/org/apache/opendal/rust/libs";
-
-    public static final String OPENDAL_JAVA = "opendal_java";
-
-    static {
-        JarJniLoader.loadLib(
-                Operator.class,
-                ORG_APACHE_OPENDAL_RUST_LIBS,
-                OPENDAL_JAVA);
-    }
-
-    private native long getOperator(String type, Map<String, String> params);
-
-    private native void freeOperator(long ptr);
-
-    private native void write(long ptr, String fileName, String content);
-
-    private native String read(long ptr, String fileName);
-
-    private native void delete(long ptr, String fileName);
-
-
     public void write(String fileName, String content) {
-        write(this.ptr, fileName, content);
+        Operators.INSTANCE.write(ptr, fileName, content);
     }
 
     public String read(String s) {
-        return read(this.ptr, s);
+        return Operators.INSTANCE.read(ptr, s);
     }
 
     public void delete(String s) {
-        delete(this.ptr, s);
+        Operators.INSTANCE.delete(ptr, s);
     }
 
     @Override
     protected void finalize() throws Throwable {
         super.finalize();
-        this.freeOperator(ptr);
+        drop();
+    }
+
+    protected void drop() {
+        Operators.INSTANCE.dropOperator(ptr);
     }
 }
